@@ -34,10 +34,18 @@ log = logging.getLogger(__name__)
 _SHUTDOWN = False
 
 
+_shutdown_count = 0
+
 def _handle_signal(signum: int, frame: object) -> None:
-    global _SHUTDOWN
-    log.warning("Shutdown signal received (%s) — stopping after current cycle", signum)
-    _SHUTDOWN = True
+    global _SHUTDOWN, _shutdown_count
+    _shutdown_count += 1
+    if _shutdown_count == 1:
+        log.warning("Ctrl+C received — stopping cleanly. Press Ctrl+C again to force quit.")
+        _SHUTDOWN = True
+    else:
+        log.warning("Force quit.")
+        import os
+        os._exit(1)
 
 
 # ---------------------------------------------------------------------------
@@ -241,12 +249,15 @@ async def run_bot() -> None:
                     broker, risk_mgr, trade_logger, known_ids, session_contract_ids
                 )
 
-            # ── Sleep until next M15 candle ─────────────────────────────
+            # ── Sleep until next M15 candle (interruptible in 1s chunks) ──
             if not _SHUTDOWN:
                 wait = seconds_until_next_candle(SCAN_INTERVAL_SECONDS)
                 log.info("Next scan in %s", format_duration(wait))
                 try:
-                    await asyncio.sleep(wait)
+                    elapsed = 0.0
+                    while not _SHUTDOWN and elapsed < wait:
+                        await asyncio.sleep(1)
+                        elapsed += 1
                 except asyncio.CancelledError:
                     break
 
