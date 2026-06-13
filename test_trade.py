@@ -18,8 +18,8 @@ from bot.strategies import Signal
 TEST_SYMBOL     = "V75"          # friendly name (must match config.py SYMBOLS)
 TEST_DIRECTION  = "BUY"          # "BUY" or "SELL"
 TEST_STAKE      = 1.00           # $1 stake (minimum on demo)
-SL_POINTS       = 50.0           # stop loss distance in price points
-TP_POINTS       = 100.0          # take profit distance in price points
+SL_POINTS       = 200.0          # stop loss distance in price points
+TP_POINTS       = 400.0          # take profit distance in price points
 # ────────────────────────────────────────────────────────────────────────────
 
 

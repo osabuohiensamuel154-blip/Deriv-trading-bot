@@ -236,9 +236,9 @@ class DerivBroker:
         sl_amount = round(stake * MULTIPLIER_VALUE * (sl_pts / entry), 2)
         tp_amount = round(stake * MULTIPLIER_VALUE * (tp_pts / entry), 2)
 
-        # Clamp to sensible minimums
-        sl_amount = max(sl_amount, 0.01)
-        tp_amount = max(tp_amount, 0.01)
+        # Deriv enforces a minimum of $0.10 for limit order amounts
+        sl_amount = max(sl_amount, 0.10)
+        tp_amount = max(tp_amount, 0.10)
 
         payload = {
             "buy": 1,
