@@ -61,7 +61,13 @@ class DerivBroker:
     async def connect(self) -> None:
         url = f"{DERIV_WS_URL}?app_id={DERIV_APP_ID}"
         log.info("Connecting to Deriv API: %s", url)
-        self._ws = await websockets.connect(url, ping_interval=30, ping_timeout=10)
+        self._ws = await websockets.connect(
+            url,
+            origin="https://deriv.com",
+            ping_interval=30,
+            ping_timeout=10,
+            open_timeout=15,
+        )
         self._listener_task = asyncio.create_task(self._listener())
         log.info("WebSocket connected")
 
