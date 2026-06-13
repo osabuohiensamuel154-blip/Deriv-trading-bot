@@ -49,6 +49,7 @@ async def execute_signal(
     broker: DerivBroker,
     risk_mgr: RiskManager,
     trade_logger: TradeLogger,
+    session_contract_ids: set,
 ) -> None:
     """Run risk checks and execute a single trade."""
     decision = risk_mgr.check(signal)
@@ -75,6 +76,7 @@ async def execute_signal(
         return
 
     risk_mgr.record_trade_opened(signal.symbol)
+    session_contract_ids.add(str(contract_id))   # track for reconciliation
     log.info("Trade active | contract_id=%s | SL=%.5f TP=%.5f",
              contract_id, signal.stop_loss, signal.take_profit)
 
@@ -92,43 +94,63 @@ async def reconcile_closed_trades(
     risk_mgr: RiskManager,
     trade_logger: TradeLogger,
     known_contract_ids: set,
+    session_contract_ids: set,
 ) -> set:
     """
-    Compare the broker's recent profit_table against known open contracts.
-    Record newly closed trades in the logger and risk manager.
+    Check only contracts opened in this session. Log any that have now closed.
+    Ignores all pre-existing trade history.
     Returns updated set of known IDs.
     """
+    if not session_contract_ids:
+        return known_contract_ids
+
     try:
-        history = await broker.get_trade_history(limit=20)
+        history = await broker.get_trade_history(limit=50)
     except DerivAPIError as exc:
         log.warning("Could not fetch trade history: %s", exc)
         return known_contract_ids
 
     for tx in history:
         cid = str(tx.get("contract_id", ""))
+
+        # Only process contracts opened in this session, not old history
+        if cid not in session_contract_ids:
+            continue
         if cid in known_contract_ids:
             continue
 
-        profit = float(tx.get("profit", 0))
-        buy_price = float(tx.get("buy_price", 0))
-        sell_price = float(tx.get("sell_price", 0))
+        shortcode  = tx.get("shortcode", "")
+        buy_price  = float(tx.get("buy_price", 0) or 0)
+        sell_price = float(tx.get("sell_price", 0) or 0)
+        profit     = sell_price - buy_price
 
-        # We don't have full signal data here — log what we have
+        # Parse symbol from shortcode e.g. "MULTUP_R_75_..." → "R_75"
+        parts = shortcode.split("_", 1)
+        raw_sym = parts[1] if len(parts) > 1 else shortcode
+        # Map back to friendly name
+        from bot.config import SYMBOLS
+        sym_map = {v: k for k, v in SYMBOLS.items()}
+        symbol = sym_map.get(raw_sym.split("_")[0] + "_" + raw_sym.split("_")[1]
+                             if "_" in raw_sym else raw_sym, raw_sym)
+
+        direction = "BUY" if "MULTUP" in shortcode else "SELL"
+
         trade_logger.log_trade(
-            symbol      = tx.get("shortcode", "UNKNOWN").split("_")[0],
-            strategy    = "UNKNOWN",
-            direction   = "BUY" if "MULTUP" in tx.get("shortcode", "") else "SELL",
+            symbol      = symbol,
+            strategy    = "BOT",
+            direction   = direction,
             entry_price = buy_price,
             exit_price  = sell_price,
             stop_loss   = 0.0,
             take_profit = 0.0,
             stake       = buy_price,
-            profit      = profit,
+            profit      = round(profit, 2),
             score       = 0.0,
             note        = "reconciled",
         )
-        risk_mgr.record_trade_result("RECONCILED", profit)
+        risk_mgr.record_trade_result(symbol, profit)
         known_contract_ids.add(cid)
+        log.info("Reconciled closed trade: %s %s P&L=%.2f", symbol, direction, profit)
 
     return known_contract_ids
 
@@ -160,6 +182,18 @@ async def run_bot() -> None:
         log.info("Starting equity: %.2f", equity)
 
         scanner = MarketScanner(broker)
+
+        # Pre-populate known_ids with existing trade history so the
+        # reconciler only logs trades opened by THIS session, not old ones.
+        try:
+            existing = await broker.get_trade_history(limit=50)
+            known_ids: set = {str(t.get("contract_id", "")) for t in existing}
+            log.info("Pre-loaded %d existing trade IDs (will not be re-logged)", len(known_ids))
+        except Exception:
+            known_ids: set = set()
+
+        # Track contract IDs opened in this session for reconciliation
+        session_contract_ids: set = set()
 
         _last_day = utc_now().date()
         _cycle = 0
@@ -199,11 +233,12 @@ async def run_bot() -> None:
                 for signal in signals:
                     if _SHUTDOWN:
                         break
-                    await execute_signal(signal, broker, risk_mgr, trade_logger)
+                    await execute_signal(signal, broker, risk_mgr, trade_logger,
+                                         session_contract_ids)
 
                 # ── Reconcile broker history ────────────────────────────
                 known_ids = await reconcile_closed_trades(
-                    broker, risk_mgr, trade_logger, known_ids
+                    broker, risk_mgr, trade_logger, known_ids, session_contract_ids
                 )
 
             # ── Sleep until next M15 candle ─────────────────────────────
