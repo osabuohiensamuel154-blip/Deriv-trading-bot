@@ -147,6 +147,19 @@ class DerivBroker:
         log.info("Authorized as: %s", resp["authorize"].get("loginid"))
         return resp["authorize"]
 
+    async def ensure_authorized(self) -> None:
+        """Re-authorize if session has expired."""
+        if not self._authorized:
+            await self.authorize()
+        else:
+            try:
+                await self._send({"ping": 1})
+            except DerivAPIError as exc:
+                if "log in" in str(exc).lower() or "token" in str(exc).lower():
+                    log.warning("Session expired — re-authorizing …")
+                    self._authorized = False
+                    await self.authorize()
+
     # ------------------------------------------------------------------
     # Account info
     # ------------------------------------------------------------------

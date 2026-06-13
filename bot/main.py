@@ -211,12 +211,22 @@ async def run_bot() -> None:
             cycle_start = utc_now()
             log.info("─── Cycle #%d | %s ───", _cycle, cycle_start.strftime("%H:%M:%S UTC"))
 
-            # ── Update equity & risk state ──────────────────────────────
+            # ── Update equity & risk state (re-auth if session expired) ────
             try:
                 equity = await broker.get_balance()
                 risk_mgr.update_equity(equity)
             except DerivAPIError as exc:
-                log.warning("Balance fetch failed: %s", exc)
+                if "log in" in str(exc).lower() or "token" in str(exc).lower():
+                    log.warning("Session expired — re-authorizing …")
+                    try:
+                        await broker.authorize()
+                        equity = await broker.get_balance()
+                        risk_mgr.update_equity(equity)
+                        log.info("Re-authorized. Equity: %.2f", equity)
+                    except DerivAPIError as reauth_exc:
+                        log.error("Re-auth failed: %s", reauth_exc)
+                else:
+                    log.warning("Balance fetch failed: %s", exc)
 
             # ── Daily roll-over ─────────────────────────────────────────
             today = utc_now().date()
@@ -225,6 +235,13 @@ async def run_bot() -> None:
                 _last_day = today
 
             log.info(risk_mgr.summary())
+
+            # ── Ensure session is alive before scanning ─────────────────
+            try:
+                await broker.ensure_authorized()
+            except DerivAPIError as exc:
+                log.error("Cannot re-authorize: %s — skipping cycle", exc)
+                continue
 
             # ── Volatility filter ───────────────────────────────────────
             if not vol_filter.is_safe_to_trade():
