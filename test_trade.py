@@ -66,13 +66,17 @@ async def run_test():
             take_profit = tp,
         )
 
+        from bot.config import MULTIPLIER_VALUE
+        sl_usd = round(TEST_STAKE * MULTIPLIER_VALUE * (SL_POINTS / current_price), 2)
+        tp_usd = round(TEST_STAKE * MULTIPLIER_VALUE * (TP_POINTS / current_price), 2)
+
         print(f"\n[4] Trade details:")
         print(f"    Symbol   : {TEST_SYMBOL} ({deriv_sym})")
         print(f"    Direction: {TEST_DIRECTION}")
         print(f"    Entry    : {current_price:.5f}")
-        print(f"    SL       : {sl:.5f}  (−{SL_POINTS} pts)")
-        print(f"    TP       : {tp:.5f}  (+{TP_POINTS} pts)")
-        print(f"    Stake    : ${TEST_STAKE:.2f}")
+        print(f"    SL price : {sl:.5f}  → auto-close if loss ≥ ${sl_usd}")
+        print(f"    TP price : {tp:.5f}  → auto-close if profit ≥ ${tp_usd}")
+        print(f"    Stake    : ${TEST_STAKE:.2f}  (x{MULTIPLIER_VALUE} multiplier)")
 
         confirm = input("\n  >>> Press ENTER to place trade, or type 'n' to cancel: ").strip()
         if confirm.lower() == 'n':

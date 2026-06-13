@@ -216,43 +216,52 @@ class DerivBroker:
         """
         Place a Multiplier contract via the Deriv API.
 
-        Returns the buy response dict with contract_id, etc.
-        Raises DerivAPIError on failure.
+        For multiplier contracts:
+        - duration must NOT be sent
+        - limit_order values are dollar amounts (P&L thresholds), not price distances
+          stop_loss  = max dollar loss before auto-close
+          take_profit = dollar profit at which to auto-close
         """
         from bot.config import SYMBOLS
 
-        deriv_symbol = SYMBOLS[signal.symbol]
-
-        # Determine contract type
+        deriv_symbol  = SYMBOLS[signal.symbol]
         contract_type = "MULTUP" if signal.direction == "BUY" else "MULTDOWN"
 
-        # Build stop-loss and take-profit limits (absolute values for multipliers)
-        sl_distance = abs(signal.entry - signal.stop_loss)
-        tp_distance = abs(signal.take_profit - signal.entry)
+        # Convert price-point distances to dollar P&L thresholds.
+        # For multipliers: dollar_move = stake × multiplier × (pts / entry)
+        entry = signal.entry if signal.entry > 0 else 1.0
+        sl_pts = abs(signal.entry - signal.stop_loss)
+        tp_pts = abs(signal.take_profit - signal.entry)
+
+        sl_amount = round(stake * MULTIPLIER_VALUE * (sl_pts / entry), 2)
+        tp_amount = round(stake * MULTIPLIER_VALUE * (tp_pts / entry), 2)
+
+        # Clamp to sensible minimums
+        sl_amount = max(sl_amount, 0.01)
+        tp_amount = max(tp_amount, 0.01)
 
         payload = {
             "buy": 1,
-            "price": stake,          # stake amount
+            "price": stake,
             "parameters": {
-                "amount":          stake,
-                "basis":           "stake",
-                "contract_type":   contract_type,
-                "currency":        "USD",
-                "duration":        None,      # no expiry for multipliers
-                "multiplier":      MULTIPLIER_VALUE,
-                "product_type":    "basic",
-                "symbol":          deriv_symbol,
+                "amount":        stake,
+                "basis":         "stake",
+                "contract_type": contract_type,
+                "currency":      "USD",
+                "multiplier":    MULTIPLIER_VALUE,
+                "product_type":  "basic",
+                "symbol":        deriv_symbol,
                 "limit_order": {
-                    "stop_loss":   round(sl_distance, 5),
-                    "take_profit": round(tp_distance, 5),
+                    "stop_loss":   sl_amount,
+                    "take_profit": tp_amount,
                 },
             },
         }
 
         log.info(
-            "Placing %s %s on %s | stake=%.2f SL=%.5f TP=%.5f",
+            "Placing %s %s on %s | stake=%.2f SL=$%.2f TP=$%.2f",
             signal.direction, contract_type, deriv_symbol,
-            stake, sl_distance, tp_distance,
+            stake, sl_amount, tp_amount,
         )
         resp = await self._send(payload)
         result = resp.get("buy", {})
