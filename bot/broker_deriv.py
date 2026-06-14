@@ -17,7 +17,7 @@ from websockets.exceptions import ConnectionClosed, WebSocketException
 
 from bot.config import (
     DERIV_APP_ID, DERIV_API_TOKEN, DERIV_WS_URL,
-    CANDLE_COUNT, MULTIPLIER_VALUE,
+    CANDLE_COUNT, MULTIPLIER_VALUE, MULTIPLIER_PER_SYMBOL,
     MAX_RETRIES, RETRY_BACKOFF,
 )
 from bot.strategies import CandleData, Signal
@@ -244,12 +244,14 @@ class DerivBroker:
 
         # Convert price-point distances to dollar P&L thresholds.
         # For multipliers: dollar_move = stake × multiplier × (pts / entry)
+        multiplier = MULTIPLIER_PER_SYMBOL.get(signal.symbol, MULTIPLIER_VALUE)
+
         entry = signal.entry if signal.entry > 0 else 1.0
         sl_pts = abs(signal.entry - signal.stop_loss)
         tp_pts = abs(signal.take_profit - signal.entry)
 
-        sl_amount = round(stake * MULTIPLIER_VALUE * (sl_pts / entry), 2)
-        tp_amount = round(stake * MULTIPLIER_VALUE * (tp_pts / entry), 2)
+        sl_amount = round(stake * multiplier * (sl_pts / entry), 2)
+        tp_amount = round(stake * multiplier * (tp_pts / entry), 2)
 
         # Deriv enforces a minimum of $0.10 for limit order amounts
         sl_amount = max(sl_amount, 0.10)
@@ -263,7 +265,7 @@ class DerivBroker:
                 "basis":         "stake",
                 "contract_type": contract_type,
                 "currency":      "USD",
-                "multiplier":    MULTIPLIER_VALUE,
+                "multiplier":    multiplier,
                 "product_type":  "basic",
                 "symbol":        deriv_symbol,
                 "limit_order": {
@@ -274,9 +276,9 @@ class DerivBroker:
         }
 
         log.info(
-            "Placing %s %s on %s | stake=%.2f SL=$%.2f TP=$%.2f",
+            "Placing %s %s on %s | stake=%.2f x%d SL=$%.2f TP=$%.2f",
             signal.direction, contract_type, deriv_symbol,
-            stake, sl_amount, tp_amount,
+            stake, multiplier, sl_amount, tp_amount,
         )
         resp = await self._send(payload)
         result = resp.get("buy", {})
