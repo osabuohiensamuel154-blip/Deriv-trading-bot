@@ -169,6 +169,35 @@ async def reconcile_closed_trades(
 
 
 # ---------------------------------------------------------------------------
+# Background position monitor — runs every 60 s independent of scan cycle
+# ---------------------------------------------------------------------------
+
+async def position_monitor(broker: DerivBroker, risk_mgr: RiskManager) -> None:
+    """
+    Polls Deriv every 60 seconds for actual open positions.
+    Clears any symbol the risk manager thinks is open but Deriv no longer shows.
+    This ensures the bot reacts within 1 minute of a position closing.
+    """
+    from bot.config import SYMBOLS
+    sym_map = {v: k for k, v in SYMBOLS.items()}
+
+    while not _SHUTDOWN:
+        await asyncio.sleep(60)
+        try:
+            live_positions = await broker.get_open_positions()
+            live_symbols = {
+                sym_map.get(p.get("symbol", ""), p.get("symbol", ""))
+                for p in live_positions
+            }
+            for sym in list(risk_mgr._state.open_symbols):
+                if sym not in live_symbols:
+                    log.info("Position monitor: %s closed on Deriv — clearing state", sym)
+                    risk_mgr.record_trade_result(sym, 0.0)
+        except Exception as exc:
+            log.debug("Position monitor error (will retry): %s", exc)
+
+
+# ---------------------------------------------------------------------------
 # Main loop
 # ---------------------------------------------------------------------------
 
@@ -221,6 +250,10 @@ async def run_bot() -> None:
 
         # Track contract IDs opened in this session for reconciliation
         session_contract_ids: set = set()
+
+        # Start background position monitor (checks every 60 s)
+        monitor_task = asyncio.create_task(position_monitor(broker, risk_mgr))
+        log.info("Position monitor started (60s interval)")
 
         _last_day = utc_now().date()
         _cycle = 0
@@ -315,6 +348,11 @@ async def run_bot() -> None:
                     break
 
     # ── Shutdown ──────────────────────────────────────────────────────────
+    monitor_task.cancel()
+    try:
+        await monitor_task
+    except asyncio.CancelledError:
+        pass
     log.info("Bot shutting down …")
     try:
         final_equity = await broker.get_balance()
