@@ -62,6 +62,16 @@ class RiskManager:
         from datetime import date
         return date.today().isoformat()
 
+    def force_reset_day(self, equity: float) -> None:
+        """Manually reset all daily counters (e.g. after a restart mid-day)."""
+        today = self._today()
+        log.info("Day counters force-reset for %s", today)
+        self._state = _DayState(
+            date=today,
+            starting_equity=equity,
+            current_equity=equity,
+        )
+
     def _maybe_reset_day(self, equity: float) -> None:
         today = self._today()
         if self._state.date != today:

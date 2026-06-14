@@ -130,7 +130,12 @@ async def reconcile_closed_trades(
         shortcode  = tx.get("shortcode", "")
         buy_price  = float(tx.get("buy_price", 0) or 0)
         sell_price = float(tx.get("sell_price", 0) or 0)
-        profit     = sell_price - buy_price
+
+        # sell_price=0 means trade is still OPEN — skip it, don't record as loss
+        if sell_price <= 0:
+            continue
+
+        profit = sell_price - buy_price
 
         # Parse symbol from shortcode e.g. "MULTUP_R_75_..." → "R_75"
         parts = shortcode.split("_", 1)
@@ -183,9 +188,9 @@ async def run_bot() -> None:
         account = await broker.authorize()
         log.info("Account: %s | Currency: %s", account.get("loginid"), account.get("currency"))
 
-        # Seed equity
+        # Seed equity and force-reset day counters on every startup
         equity = await broker.get_balance()
-        risk_mgr.update_equity(equity)
+        risk_mgr.force_reset_day(equity)
         trade_logger.set_equity_start(equity)
         log.info("Starting equity: %.2f", equity)
 
