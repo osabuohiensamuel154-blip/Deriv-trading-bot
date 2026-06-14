@@ -176,13 +176,15 @@ async def position_monitor(broker: DerivBroker, risk_mgr: RiskManager) -> None:
     """
     Polls Deriv every 60 seconds for actual open positions.
     Clears any symbol the risk manager thinks is open but Deriv no longer shows.
-    This ensures the bot reacts within 1 minute of a position closing.
+    Runs as an independent background task — errors are swallowed and retried.
     """
     from bot.config import SYMBOLS
     sym_map = {v: k for k, v in SYMBOLS.items()}
 
     while not _SHUTDOWN:
         await asyncio.sleep(60)
+        if not risk_mgr._state.open_symbols:
+            continue   # nothing to check
         try:
             live_positions = await broker.get_open_positions()
             live_symbols = {
@@ -193,8 +195,10 @@ async def position_monitor(broker: DerivBroker, risk_mgr: RiskManager) -> None:
                 if sym not in live_symbols:
                     log.info("Position monitor: %s closed on Deriv — clearing state", sym)
                     risk_mgr.record_trade_result(sym, 0.0)
+        except asyncio.CancelledError:
+            raise
         except Exception as exc:
-            log.debug("Position monitor error (will retry): %s", exc)
+            log.debug("Position monitor check failed (will retry in 60s): %s", exc)
 
 
 # ---------------------------------------------------------------------------

@@ -46,6 +46,8 @@ class DerivBroker:
         self._request_map: Dict[str, asyncio.Future] = {}
         self._listener_task: Optional[asyncio.Task] = None
         self._authorized = False
+        self._reconnect_lock = asyncio.Lock()   # prevents simultaneous reconnects
+        self._send_lock = asyncio.Lock()         # serialises sends during reconnect
 
     # ------------------------------------------------------------------
     # Connection lifecycle
@@ -103,6 +105,20 @@ class DerivBroker:
         except asyncio.CancelledError:
             pass
 
+    async def _reconnect(self) -> None:
+        """Reconnect and re-authorize. Only one reconnect runs at a time."""
+        async with self._reconnect_lock:
+            # Another coroutine may have already reconnected while we waited
+            if self._ws and not self._ws.protocol.close_code:
+                return
+            try:
+                await self.connect()
+                await self.authorize()
+                log.info("Reconnected and re-authorized successfully")
+            except Exception as exc:
+                log.error("Reconnect failed: %s", exc)
+                raise
+
     async def _send(self, payload: dict) -> dict:
         """Send a request and await its response with retry logic."""
         for attempt in range(1, MAX_RETRIES + 1):
@@ -125,11 +141,10 @@ class DerivBroker:
                     wait = RETRY_BACKOFF ** attempt
                     log.info("Retrying in %.1f s …", wait)
                     await asyncio.sleep(wait)
-                    # Attempt reconnect
                     try:
-                        await self.connect()
-                    except Exception as reconn_exc:
-                        log.error("Reconnect failed: %s", reconn_exc)
+                        await self._reconnect()
+                    except Exception:
+                        pass   # will retry the send on next attempt
                 else:
                     raise
 
