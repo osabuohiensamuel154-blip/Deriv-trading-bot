@@ -89,8 +89,8 @@ REVERSAL_WEIGHTS: Dict[str, float] = {
 # Risk management
 # ---------------------------------------------------------------------------
 DAILY_LOSS_LIMIT_PCT:      float = 0.03    # 3 % of account equity
-MAX_DAILY_TRADES:          int   = 8
-MAX_TRADES_PER_SYMBOL:     int   = 2
+MAX_DAILY_TRADES:          int   = 20
+MAX_TRADES_PER_SYMBOL:     int   = 5
 RISK_PER_TRADE_MIN_PCT:    float = 0.005   # 0.5 %
 RISK_PER_TRADE_MAX_PCT:    float = 0.010   # 1.0 %
 CONSEC_LOSSES_PAUSE:       int   = 3       # pause for 2 h
