@@ -196,6 +196,20 @@ async def run_bot() -> None:
 
         scanner = MarketScanner(broker)
 
+        # Sync open positions from Deriv so the risk manager is accurate
+        # even after a mid-session restart
+        try:
+            from bot.config import SYMBOLS
+            sym_map = {v: k for k, v in SYMBOLS.items()}
+            open_positions = await broker.get_open_positions()
+            for pos in open_positions:
+                raw = pos.get("symbol", "")
+                sym = sym_map.get(raw, raw)
+                risk_mgr.register_open(sym)
+                log.info("Restored open position from Deriv: %s", sym)
+        except Exception as exc:
+            log.warning("Could not sync open positions on startup: %s", exc)
+
         # Pre-populate known_ids with existing trade history so the
         # reconciler only logs trades opened by THIS session, not old ones.
         try:
