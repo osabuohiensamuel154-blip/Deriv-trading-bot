@@ -255,6 +255,23 @@ async def run_bot() -> None:
 
             log.info(risk_mgr.summary())
 
+            # ── Sync open positions with Deriv (catches externally closed trades) ─
+            try:
+                from bot.config import SYMBOLS
+                sym_map = {v: k for k, v in SYMBOLS.items()}
+                live_positions = await broker.get_open_positions()
+                live_symbols = {
+                    sym_map.get(p.get("symbol", ""), p.get("symbol", ""))
+                    for p in live_positions
+                }
+                # Any symbol the risk manager thinks is open but Deriv says isn't
+                for sym in list(risk_mgr._state.open_symbols):
+                    if sym not in live_symbols:
+                        log.info("Position closed externally: %s — updating state", sym)
+                        risk_mgr.record_trade_result(sym, 0.0)
+            except Exception as exc:
+                log.warning("Position sync failed: %s", exc)
+
             # ── Ensure session is alive before scanning ─────────────────
             try:
                 await broker.ensure_authorized()
