@@ -100,8 +100,20 @@ PAUSE_DURATION_SECONDS:    int   = 7200    # 2 hours
 # Take-profit to stop-loss ratio
 TP_SL_RATIO: float = 2.0
 
-# Multipliers stake (Deriv multiplier contracts)
-MULTIPLIER_VALUE: int = 50   # x50
+# Multipliers per symbol — Deriv enforces different allowed values per instrument
+# R_50  accepts: 80, 200, 400, 600, 800
+# R_75  accepts: 50, 100, 200, 500, 1000
+# R_100 accepts: 50, 100, 200, 500, 1000
+# BOOM1000  accepts: 50, 100, 200, 500, 1000
+# CRASH1000 accepts: 50, 100, 200, 500, 1000
+MULTIPLIER_VALUE: int = 50   # default fallback
+MULTIPLIER_PER_SYMBOL: Dict[str, int] = {
+    "V50":       80,
+    "V75":       50,
+    "V100":      50,
+    "BOOM1000":  50,
+    "CRASH1000": 50,
+}
 
 # ---------------------------------------------------------------------------
 # Execution loop
