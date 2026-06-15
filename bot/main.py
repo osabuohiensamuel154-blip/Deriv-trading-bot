@@ -371,16 +371,21 @@ async def run_bot() -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
+    import time as _time
     signal.signal(signal.SIGINT, _handle_signal)
     signal.signal(signal.SIGTERM, _handle_signal)
 
-    try:
-        asyncio.run(run_bot())
-    except KeyboardInterrupt:
-        log.info("Interrupted by user")
-    except Exception as exc:
-        log.critical("Fatal error: %s", exc, exc_info=True)
-        sys.exit(1)
+    while not _SHUTDOWN:
+        try:
+            asyncio.run(run_bot())
+        except KeyboardInterrupt:
+            log.info("Interrupted by user")
+            break
+        except Exception as exc:
+            if _SHUTDOWN:
+                break
+            log.critical("Fatal error — restarting in 30s: %s", exc, exc_info=True)
+            _time.sleep(30)
 
 
 if __name__ == "__main__":

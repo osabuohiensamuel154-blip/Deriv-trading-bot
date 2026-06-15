@@ -134,7 +134,7 @@ class DerivBroker:
                 return response
             except DerivAPIError:
                 raise
-            except (ConnectionClosed, asyncio.TimeoutError, WebSocketException) as exc:
+            except (ConnectionClosed, asyncio.TimeoutError, WebSocketException, OSError) as exc:
                 log.warning("Request failed (attempt %d/%d): %s", attempt, MAX_RETRIES, exc)
                 self._request_map.pop(req_id, None)
                 if attempt < MAX_RETRIES:
