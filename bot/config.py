@@ -38,8 +38,6 @@ SYMBOLS: Dict[str, str] = {
     "V75_1S":    "1HZ75V",
     "V90_1S":    "1HZ90V",
     "V100_1S":   "1HZ100V",
-    "V150_1S":   "1HZ150V",
-    "V250_1S":   "1HZ250V",
     # --- Reversal instruments ---
     "BOOM1000":  "BOOM1000",
     "CRASH1000": "CRASH1000",
@@ -50,7 +48,7 @@ TREND_SYMBOLS: List[str] = [
     "V5", "V10", "V15", "V25", "V30", "V50", "V75", "V90", "V100",
     # 1-second
     "V5_1S", "V10_1S", "V15_1S", "V25_1S", "V30_1S",
-    "V50_1S", "V75_1S", "V90_1S", "V100_1S", "V150_1S", "V250_1S",
+    "V50_1S", "V75_1S", "V90_1S", "V100_1S",
 ]
 REVERSAL_SYMBOLS: List[str] = ["BOOM1000", "CRASH1000"]
 
@@ -154,8 +152,6 @@ MULTIPLIER_PER_SYMBOL: Dict[str, int] = {
     "V75_1S":    100,
     "V90_1S":    100,
     "V100_1S":   100,
-    "V150_1S":   100,
-    "V250_1S":   100,
     # Reversal
     "BOOM1000":  50,
     "CRASH1000": 50,
