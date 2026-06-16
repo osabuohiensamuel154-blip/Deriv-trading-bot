@@ -1,5 +1,7 @@
 """
-Crypto bot entry point — Binance Spot, long-only, same Trend strategy as Deriv bot.
+Crypto bot entry point — Binance USDT-M Futures, long + short, same Trend
+strategy as the Deriv bot. Isolated margin caps max loss per position at
+the margin committed (mirrors Deriv's multiplier "stake = max loss" model).
 Run:  python -m bot.main_crypto
 """
 
@@ -22,7 +24,7 @@ from bot.broker_binance import BinanceBroker, BinanceAPIError
 from bot.config import (
     CRYPTO_SYMBOLS, CRYPTO_TREND_SYMBOLS, CRYPTO_SCAN_INTERVAL_SECONDS,
     CRYPTO_MIN_NOTIONAL_USDT, CRYPTO_TRADE_LOG_FILE, CRYPTO_PERF_LOG_FILE,
-    CRYPTO_APP_LOG_FILE, CRYPTO_POSITIONS_FILE,
+    CRYPTO_APP_LOG_FILE, CRYPTO_POSITIONS_FILE, BINANCE_LEVERAGE,
 )
 from bot.logger import TradeLogger, setup_logging
 from bot.risk_manager import RiskManager, VolatilityFilter
@@ -70,7 +72,7 @@ def _save_positions(positions: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Closing a position (market sell)
+# Closing a position (long → market sell, short → market buy, reduceOnly)
 # ---------------------------------------------------------------------------
 
 async def close_position(
@@ -87,7 +89,10 @@ async def close_position(
 
     broker_symbol = CRYPTO_SYMBOLS[symbol]
     try:
-        order = await broker.market_sell(broker_symbol, pos["qty"])
+        if pos["side"] == "LONG":
+            order = await broker.close_long(broker_symbol, pos["qty"])
+        else:
+            order = await broker.close_short(broker_symbol, pos["qty"])
     except BinanceAPIError as exc:
         log.error("Failed to close %s position: %s", symbol, exc)
         return
@@ -99,12 +104,15 @@ async def close_position(
         except BinanceAPIError:
             exit_price = pos["entry"]
 
-    profit = (exit_price - pos["entry"]) * pos["qty"]
+    if pos["side"] == "LONG":
+        profit = (exit_price - pos["entry"]) * pos["qty"]
+    else:
+        profit = (pos["entry"] - exit_price) * pos["qty"]
 
     trade_logger.log_trade(
         symbol      = symbol,
         strategy    = "TREND",
-        direction   = "BUY",
+        direction   = "BUY" if pos["side"] == "LONG" else "SELL",
         entry_price = pos["entry"],
         exit_price  = exit_price,
         stop_loss   = pos["stop_loss"],
@@ -117,8 +125,8 @@ async def close_position(
     risk_mgr.record_trade_result(symbol, profit)
     del positions[symbol]
     _save_positions(positions)
-    log.info("Closed %s | entry=%.4f exit=%.4f P&L=%.2f (%s)",
-              symbol, pos["entry"], exit_price, profit, note)
+    log.info("Closed %s %s | entry=%.4f exit=%.4f P&L=%.2f (%s)",
+              symbol, pos["side"], pos["entry"], exit_price, profit, note)
 
 
 # ---------------------------------------------------------------------------
@@ -132,14 +140,18 @@ async def execute_signal(
     trade_logger: TradeLogger,
     positions: dict,
 ) -> None:
-    if signal.direction == "SELL":
-        if signal.symbol not in positions:
-            log.debug("SELL signal for %s but no open position — ignoring (long-only)", signal.symbol)
-            return
-        await close_position(signal.symbol, positions, broker, risk_mgr, trade_logger, note="signal_exit")
-        return
+    desired_side = "LONG" if signal.direction == "BUY" else "SHORT"
+    existing = positions.get(signal.symbol)
 
-    # BUY: open a new long position
+    if existing:
+        if existing["side"] == desired_side:
+            log.debug("%s already %s — ignoring duplicate signal", signal.symbol, desired_side)
+            return
+        # Opposite-direction signal: reverse the position (close, then open fresh below)
+        log.info("%s signal reverses open %s position — closing first",
+                  signal.symbol, existing["side"])
+        await close_position(signal.symbol, positions, broker, risk_mgr, trade_logger, note="signal_reversal")
+
     decision = risk_mgr.check(signal)
     if not decision.allowed:
         log.info("Trade BLOCKED [%s %s]: %s", signal.symbol, signal.direction, decision.reason)
@@ -152,11 +164,14 @@ async def execute_signal(
         return
 
     broker_symbol = CRYPTO_SYMBOLS[signal.symbol]
-    log.info("Executing trade | %s %s | score=%.1f stake=%.2f USDT",
-              signal.symbol, signal.strategy, signal.score, stake)
+    log.info("Executing trade | %s %s %s | score=%.1f margin=%.2f USDT leverage=%dx",
+              signal.symbol, signal.strategy, desired_side, signal.score, stake, BINANCE_LEVERAGE)
 
     try:
-        order = await broker.market_buy(broker_symbol, stake)
+        if desired_side == "LONG":
+            order = await broker.open_long(broker_symbol, stake)
+        else:
+            order = await broker.open_short(broker_symbol, stake)
     except BinanceAPIError as exc:
         log.error("Trade placement failed for %s: %s", signal.symbol, exc)
         return
@@ -164,10 +179,11 @@ async def execute_signal(
     filled_qty = float(order.get("filled") or order.get("amount") or 0)
     avg_price  = float(order.get("average") or order.get("price") or signal.entry)
     if filled_qty <= 0:
-        log.error("No fill info returned for %s buy — not tracking position", signal.symbol)
+        log.error("No fill info returned for %s %s — not tracking position", signal.symbol, desired_side)
         return
 
     positions[signal.symbol] = {
+        "side":        desired_side,
         "entry":       avg_price,
         "stop_loss":   signal.stop_loss,
         "take_profit": signal.take_profit,
@@ -176,8 +192,8 @@ async def execute_signal(
     }
     risk_mgr.record_trade_opened(signal.symbol)
     _save_positions(positions)
-    log.info("Position opened | %s qty=%s entry=%.4f SL=%.4f TP=%.4f",
-              signal.symbol, filled_qty, avg_price, signal.stop_loss, signal.take_profit)
+    log.info("Position opened | %s %s qty=%s entry=%.4f SL=%.4f TP=%.4f",
+              signal.symbol, desired_side, filled_qty, avg_price, signal.stop_loss, signal.take_profit)
 
 
 # ---------------------------------------------------------------------------
@@ -205,11 +221,18 @@ async def position_monitor(
                 log.debug("Position monitor: price fetch failed for %s: %s", symbol, exc)
                 continue
 
-            if price <= pos["stop_loss"]:
-                log.info("%s hit stop loss (%.4f <= %.4f)", symbol, price, pos["stop_loss"])
+            if pos["side"] == "LONG":
+                hit_sl = price <= pos["stop_loss"]
+                hit_tp = price >= pos["take_profit"]
+            else:
+                hit_sl = price >= pos["stop_loss"]
+                hit_tp = price <= pos["take_profit"]
+
+            if hit_sl:
+                log.info("%s %s hit stop loss (price=%.4f SL=%.4f)", symbol, pos["side"], price, pos["stop_loss"])
                 await close_position(symbol, positions, broker, risk_mgr, trade_logger, note="stop_loss")
-            elif price >= pos["take_profit"]:
-                log.info("%s hit take profit (%.4f >= %.4f)", symbol, price, pos["take_profit"])
+            elif hit_tp:
+                log.info("%s %s hit take profit (price=%.4f TP=%.4f)", symbol, pos["side"], price, pos["take_profit"])
                 await close_position(symbol, positions, broker, risk_mgr, trade_logger, note="take_profit")
 
 
@@ -221,7 +244,7 @@ async def run_bot() -> None:
     global _SHUTDOWN
 
     print_banner(instruments=" | ".join(CRYPTO_SYMBOLS.keys()),
-                 strategies="Trend (EMA+RSI) only — Binance spot, long-only")
+                 strategies=f"Trend (EMA+RSI) — Binance Futures {BINANCE_LEVERAGE}x isolated, long+short")
     log.info("Crypto bot starting up …")
 
     risk_mgr     = RiskManager()
@@ -235,9 +258,9 @@ async def run_bot() -> None:
         trade_logger.set_equity_start(equity)
         log.info("Starting equity: %.2f USDT", equity)
 
-        for symbol in positions:
+        for symbol, pos in positions.items():
             risk_mgr.register_open(symbol)
-            log.info("Restored open position from disk: %s", symbol)
+            log.info("Restored open %s position from disk: %s", pos.get("side", "?"), symbol)
 
         scanner = MarketScanner(
             broker,

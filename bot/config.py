@@ -175,7 +175,7 @@ PERF_LOG_FILE:  str = os.path.join(LOG_DIR, "performance.csv")
 APP_LOG_FILE:   str = os.path.join(LOG_DIR, "bot.log")
 
 # ---------------------------------------------------------------------------
-# Binance / Crypto (spot, long-only)
+# Binance / Crypto (USDT-M Futures — supports both long and short)
 # ---------------------------------------------------------------------------
 BINANCE_API_KEY:    str  = os.getenv("BINANCE_API_KEY", "")
 BINANCE_API_SECRET: str  = os.getenv("BINANCE_API_SECRET", "")
@@ -190,8 +190,14 @@ CRYPTO_SYMBOLS: Dict[str, str] = {
 }
 CRYPTO_TREND_SYMBOLS: List[str] = list(CRYPTO_SYMBOLS.keys())
 
-# Binance rejects orders below this notional value (USDT)
+# Binance rejects orders below this notional value (USDT) — used as the
+# minimum margin committed per futures position.
 CRYPTO_MIN_NOTIONAL_USDT: float = 10.0
+
+# Isolated margin: max loss on a position is capped at the margin committed,
+# the same "stake = max loss" guarantee used for Deriv multiplier contracts.
+BINANCE_MARGIN_MODE: str = "ISOLATED"
+BINANCE_LEVERAGE:    int = int(os.getenv("BINANCE_LEVERAGE", "3"))
 
 CRYPTO_SCAN_INTERVAL_SECONDS: int = SCAN_INTERVAL_SECONDS   # same M15 cadence
 

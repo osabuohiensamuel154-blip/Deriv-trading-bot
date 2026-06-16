@@ -1,21 +1,25 @@
 """
-Binance Spot broker module via ccxt.
-Handles authentication, candle fetching, and spot market order execution.
+Binance USDT-M Futures broker module via ccxt.
+Handles authentication, candle fetching, leverage/margin setup, and
+market order execution for both long and short positions.
 
-Spot trading is long-only: BUY opens a position, SELL closes one.
-There is no native "open position" concept (just account balances), so
-position tracking (entry/SL/TP) is managed by the caller (bot/main_crypto.py).
+Isolated margin mode is used per symbol so the maximum possible loss on
+any position is capped at the margin committed to it — the same
+"stake = max loss" guarantee used for Deriv multiplier contracts.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import ccxt.async_support as ccxt
 import numpy as np
 
-from bot.config import BINANCE_API_KEY, BINANCE_API_SECRET, BINANCE_TESTNET
+from bot.config import (
+    BINANCE_API_KEY, BINANCE_API_SECRET, BINANCE_TESTNET,
+    BINANCE_MARGIN_MODE, BINANCE_LEVERAGE,
+)
 from bot.strategies import CandleData
 
 log = logging.getLogger(__name__)
@@ -32,7 +36,7 @@ class BinanceAPIError(Exception):
 
 class BinanceBroker:
     """
-    Async broker for Binance Spot via ccxt.
+    Async broker for Binance USDT-M Futures via ccxt.
 
     Usage pattern:
         async with BinanceBroker() as broker:
@@ -40,7 +44,8 @@ class BinanceBroker:
     """
 
     def __init__(self) -> None:
-        self._exchange: Optional[ccxt.binance] = None
+        self._exchange: Optional[ccxt.binanceusdm] = None
+        self._leverage_set: set = set()
 
     # ------------------------------------------------------------------
     # Connection lifecycle
@@ -59,7 +64,7 @@ class BinanceBroker:
                 "BINANCE_API_KEY / BINANCE_API_SECRET is not set. Check your .env file."
             )
 
-        self._exchange = ccxt.binance({
+        self._exchange = ccxt.binanceusdm({
             "apiKey": BINANCE_API_KEY,
             "secret": BINANCE_API_SECRET,
             "enableRateLimit": True,
@@ -68,12 +73,31 @@ class BinanceBroker:
             self._exchange.set_sandbox_mode(True)
 
         await self._exchange.load_markets()
-        log.info("Connected to Binance%s", " (TESTNET)" if BINANCE_TESTNET else " (LIVE)")
+        log.info("Connected to Binance Futures%s", " (TESTNET)" if BINANCE_TESTNET else " (LIVE)")
 
     async def disconnect(self) -> None:
         if self._exchange:
             await self._exchange.close()
         log.info("Binance connection closed")
+
+    # ------------------------------------------------------------------
+    # Leverage / margin setup (once per symbol)
+    # ------------------------------------------------------------------
+
+    async def _ensure_leverage(self, symbol: str) -> None:
+        if symbol in self._leverage_set:
+            return
+        try:
+            await self._exchange.set_margin_mode(BINANCE_MARGIN_MODE.lower(), symbol)
+        except Exception as exc:
+            # "No need to change margin type" is raised when already set — harmless
+            if "no need to change" not in str(exc).lower():
+                log.warning("Could not set margin mode for %s: %s", symbol, exc)
+        try:
+            await self._exchange.set_leverage(BINANCE_LEVERAGE, symbol)
+        except Exception as exc:
+            log.warning("Could not set leverage for %s: %s", symbol, exc)
+        self._leverage_set.add(symbol)
 
     # ------------------------------------------------------------------
     # Account info
@@ -85,6 +109,14 @@ class BinanceBroker:
         except Exception as exc:
             raise BinanceAPIError(str(exc)) from exc
         return float(bal.get("free", {}).get(asset, 0.0))
+
+    async def get_open_positions(self) -> List[Dict]:
+        """Returns non-zero futures positions currently open on the exchange."""
+        try:
+            positions = await self._exchange.fetch_positions()
+        except Exception as exc:
+            raise BinanceAPIError(str(exc)) from exc
+        return [p for p in positions if float(p.get("contracts") or 0) != 0]
 
     # ------------------------------------------------------------------
     # Market data
@@ -117,34 +149,55 @@ class BinanceBroker:
         return float(ticker["last"])
 
     # ------------------------------------------------------------------
-    # Trade execution (spot, long-only)
+    # Trade execution (futures, long + short)
     # ------------------------------------------------------------------
 
-    async def market_buy(self, symbol: str, quote_amount: float) -> Dict:
-        """Spend `quote_amount` of quote currency (e.g. USDT) buying `symbol`."""
+    async def open_long(self, symbol: str, margin_usdt: float, leverage: int = BINANCE_LEVERAGE) -> Dict:
+        """Open a long position, committing `margin_usdt` as isolated margin."""
+        await self._ensure_leverage(symbol)
         try:
             price  = await self.get_price(symbol)
-            amount = float(self._exchange.amount_to_precision(symbol, quote_amount / price))
-            log.info("Market BUY %s | quote=%.2f amount=%s @ ~%.4f",
-                      symbol, quote_amount, amount, price)
+            amount = float(self._exchange.amount_to_precision(symbol, margin_usdt * leverage / price))
+            log.info("Open LONG %s | margin=%.2f leverage=%dx amount=%s @ ~%.4f",
+                      symbol, margin_usdt, leverage, amount, price)
             order = await self._exchange.create_market_buy_order(symbol, amount)
             return order
         except Exception as exc:
             raise BinanceAPIError(str(exc)) from exc
 
-    async def market_sell(self, symbol: str, base_amount: float) -> Dict:
-        """Sell `base_amount` units of the base asset (e.g. BTC in BTC/USDT)."""
+    async def open_short(self, symbol: str, margin_usdt: float, leverage: int = BINANCE_LEVERAGE) -> Dict:
+        """Open a short position, committing `margin_usdt` as isolated margin."""
+        await self._ensure_leverage(symbol)
         try:
-            amount = float(self._exchange.amount_to_precision(symbol, base_amount))
-            log.info("Market SELL %s | amount=%s", symbol, amount)
+            price  = await self.get_price(symbol)
+            amount = float(self._exchange.amount_to_precision(symbol, margin_usdt * leverage / price))
+            log.info("Open SHORT %s | margin=%.2f leverage=%dx amount=%s @ ~%.4f",
+                      symbol, margin_usdt, leverage, amount, price)
             order = await self._exchange.create_market_sell_order(symbol, amount)
             return order
         except Exception as exc:
             raise BinanceAPIError(str(exc)) from exc
 
-    async def get_asset_balance(self, asset: str) -> float:
+    async def close_long(self, symbol: str, amount: float) -> Dict:
+        """Close an open long position by selling `amount` units of the contract."""
         try:
-            bal = await self._exchange.fetch_balance()
+            amount = float(self._exchange.amount_to_precision(symbol, amount))
+            log.info("Close LONG %s | amount=%s", symbol, amount)
+            order = await self._exchange.create_market_sell_order(
+                symbol, amount, params={"reduceOnly": True}
+            )
+            return order
         except Exception as exc:
             raise BinanceAPIError(str(exc)) from exc
-        return float(bal.get("free", {}).get(asset, 0.0))
+
+    async def close_short(self, symbol: str, amount: float) -> Dict:
+        """Close an open short position by buying back `amount` units of the contract."""
+        try:
+            amount = float(self._exchange.amount_to_precision(symbol, amount))
+            log.info("Close SHORT %s | amount=%s", symbol, amount)
+            order = await self._exchange.create_market_buy_order(
+                symbol, amount, params={"reduceOnly": True}
+            )
+            return order
+        except Exception as exc:
+            raise BinanceAPIError(str(exc)) from exc
