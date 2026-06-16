@@ -1,7 +1,7 @@
 """
-Crypto bot entry point — Binance USDT-M Futures, long + short, same Trend
-strategy as the Deriv bot. Isolated margin caps max loss per position at
-the margin committed (mirrors Deriv's multiplier "stake = max loss" model).
+Crypto bot entry point — Bybit USDT Linear Perpetuals, long + short, same
+Trend strategy as the Deriv bot. Isolated margin caps max loss per position
+at the margin committed (mirrors Deriv's multiplier "stake = max loss" model).
 Run:  python -m bot.main_crypto
 """
 
@@ -20,11 +20,11 @@ try:
 except ImportError:
     pass
 
-from bot.broker_binance import BinanceBroker, BinanceAPIError
+from bot.broker_bybit import BybitBroker, BybitAPIError
 from bot.config import (
     CRYPTO_SYMBOLS, CRYPTO_TREND_SYMBOLS, CRYPTO_SCAN_INTERVAL_SECONDS,
     CRYPTO_MIN_NOTIONAL_USDT, CRYPTO_TRADE_LOG_FILE, CRYPTO_PERF_LOG_FILE,
-    CRYPTO_APP_LOG_FILE, CRYPTO_POSITIONS_FILE, BINANCE_LEVERAGE,
+    CRYPTO_APP_LOG_FILE, CRYPTO_POSITIONS_FILE, BYBIT_LEVERAGE,
 )
 from bot.logger import TradeLogger, setup_logging
 from bot.risk_manager import RiskManager, VolatilityFilter
@@ -51,7 +51,7 @@ def _handle_signal(signum: int, frame: object) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Position persistence (Binance spot has no native "open position" concept)
+# Position persistence (Bybit has no per-session "open position" concept via ccxt — tracked locally)
 # ---------------------------------------------------------------------------
 
 def _load_positions() -> dict:
@@ -78,7 +78,7 @@ def _save_positions(positions: dict) -> None:
 async def close_position(
     symbol: str,
     positions: dict,
-    broker: BinanceBroker,
+    broker: BybitBroker,
     risk_mgr: RiskManager,
     trade_logger: TradeLogger,
     note: str,
@@ -93,7 +93,7 @@ async def close_position(
             order = await broker.close_long(broker_symbol, pos["qty"])
         else:
             order = await broker.close_short(broker_symbol, pos["qty"])
-    except BinanceAPIError as exc:
+    except BybitAPIError as exc:
         log.error("Failed to close %s position: %s", symbol, exc)
         return
 
@@ -101,7 +101,7 @@ async def close_position(
     if exit_price <= 0:
         try:
             exit_price = await broker.get_price(broker_symbol)
-        except BinanceAPIError:
+        except BybitAPIError:
             exit_price = pos["entry"]
 
     if pos["side"] == "LONG":
@@ -135,7 +135,7 @@ async def close_position(
 
 async def execute_signal(
     signal: Signal,
-    broker: BinanceBroker,
+    broker: BybitBroker,
     risk_mgr: RiskManager,
     trade_logger: TradeLogger,
     positions: dict,
@@ -165,14 +165,14 @@ async def execute_signal(
 
     broker_symbol = CRYPTO_SYMBOLS[signal.symbol]
     log.info("Executing trade | %s %s %s | score=%.1f margin=%.2f USDT leverage=%dx",
-              signal.symbol, signal.strategy, desired_side, signal.score, stake, BINANCE_LEVERAGE)
+              signal.symbol, signal.strategy, desired_side, signal.score, stake, BYBIT_LEVERAGE)
 
     try:
         if desired_side == "LONG":
             order = await broker.open_long(broker_symbol, stake)
         else:
             order = await broker.open_short(broker_symbol, stake)
-    except BinanceAPIError as exc:
+    except BybitAPIError as exc:
         log.error("Trade placement failed for %s: %s", signal.symbol, exc)
         return
 
@@ -201,7 +201,7 @@ async def execute_signal(
 # ---------------------------------------------------------------------------
 
 async def position_monitor(
-    broker: BinanceBroker,
+    broker: BybitBroker,
     risk_mgr: RiskManager,
     trade_logger: TradeLogger,
     positions: dict,
@@ -217,7 +217,7 @@ async def position_monitor(
             broker_symbol = CRYPTO_SYMBOLS[symbol]
             try:
                 price = await broker.get_price(broker_symbol)
-            except BinanceAPIError as exc:
+            except BybitAPIError as exc:
                 log.debug("Position monitor: price fetch failed for %s: %s", symbol, exc)
                 continue
 
@@ -244,7 +244,7 @@ async def run_bot() -> None:
     global _SHUTDOWN
 
     print_banner(instruments=" | ".join(CRYPTO_SYMBOLS.keys()),
-                 strategies=f"Trend (EMA+RSI) — Binance Futures {BINANCE_LEVERAGE}x isolated, long+short")
+                 strategies=f"Trend (EMA+RSI) — Bybit Linear Perps {BYBIT_LEVERAGE}x isolated, long+short")
     log.info("Crypto bot starting up …")
 
     risk_mgr     = RiskManager()
@@ -252,7 +252,7 @@ async def run_bot() -> None:
     trade_logger = TradeLogger(trade_log_file=CRYPTO_TRADE_LOG_FILE, perf_log_file=CRYPTO_PERF_LOG_FILE)
     positions    = _load_positions()
 
-    async with BinanceBroker() as broker:
+    async with BybitBroker() as broker:
         equity = await broker.get_balance("USDT")
         risk_mgr.force_reset_day(equity)
         trade_logger.set_equity_start(equity)
@@ -285,7 +285,7 @@ async def run_bot() -> None:
             try:
                 equity = await broker.get_balance("USDT")
                 risk_mgr.update_equity(equity)
-            except BinanceAPIError as exc:
+            except BybitAPIError as exc:
                 log.warning("Balance fetch failed: %s", exc)
 
             today = utc_now().date()

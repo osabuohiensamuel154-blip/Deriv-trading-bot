@@ -175,29 +175,29 @@ PERF_LOG_FILE:  str = os.path.join(LOG_DIR, "performance.csv")
 APP_LOG_FILE:   str = os.path.join(LOG_DIR, "bot.log")
 
 # ---------------------------------------------------------------------------
-# Binance / Crypto (USDT-M Futures — supports both long and short)
+# Bybit / Crypto (USDT Linear Perpetuals — supports both long and short)
 # ---------------------------------------------------------------------------
-BINANCE_API_KEY:    str  = os.getenv("BINANCE_API_KEY", "")
-BINANCE_API_SECRET: str  = os.getenv("BINANCE_API_SECRET", "")
-# Defaults to the Binance testnet so an unconfigured .env can never touch real funds.
-BINANCE_TESTNET:    bool = os.getenv("BINANCE_TESTNET", "true").lower() == "true"
+BYBIT_API_KEY:    str  = os.getenv("BYBIT_API_KEY", "")
+BYBIT_API_SECRET: str  = os.getenv("BYBIT_API_SECRET", "")
+# Defaults to testnet so an unconfigured .env can never touch real funds.
+BYBIT_TESTNET:    bool = os.getenv("BYBIT_TESTNET", "true").lower() == "true"
 
+# Bybit USDT Linear Perpetual symbol format (ccxt unified: "BASE/USDT:USDT")
 CRYPTO_SYMBOLS: Dict[str, str] = {
-    "BTC": "BTC/USDT",
-    "ETH": "ETH/USDT",
-    "BNB": "BNB/USDT",
-    "SOL": "SOL/USDT",
+    "BTC": "BTC/USDT:USDT",
+    "ETH": "ETH/USDT:USDT",
+    "SOL": "SOL/USDT:USDT",
+    "XRP": "XRP/USDT:USDT",
 }
 CRYPTO_TREND_SYMBOLS: List[str] = list(CRYPTO_SYMBOLS.keys())
 
-# Binance rejects orders below this notional value (USDT) — used as the
-# minimum margin committed per futures position.
+# Minimum margin per position in USDT (Bybit min is ~1 USDT but keep 10 conservative).
 CRYPTO_MIN_NOTIONAL_USDT: float = 10.0
 
 # Isolated margin: max loss on a position is capped at the margin committed,
 # the same "stake = max loss" guarantee used for Deriv multiplier contracts.
-BINANCE_MARGIN_MODE: str = "ISOLATED"
-BINANCE_LEVERAGE:    int = int(os.getenv("BINANCE_LEVERAGE", "3"))
+BYBIT_MARGIN_MODE: str = "isolated"
+BYBIT_LEVERAGE:    int = int(os.getenv("BYBIT_LEVERAGE", "3"))
 
 CRYPTO_SCAN_INTERVAL_SECONDS: int = SCAN_INTERVAL_SECONDS   # same M15 cadence
 
