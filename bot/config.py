@@ -173,3 +173,29 @@ LOG_DIR: str = os.path.join(os.path.dirname(__file__), "..", "logs")
 TRADE_LOG_FILE: str = os.path.join(LOG_DIR, "trades.csv")
 PERF_LOG_FILE:  str = os.path.join(LOG_DIR, "performance.csv")
 APP_LOG_FILE:   str = os.path.join(LOG_DIR, "bot.log")
+
+# ---------------------------------------------------------------------------
+# Binance / Crypto (spot, long-only)
+# ---------------------------------------------------------------------------
+BINANCE_API_KEY:    str  = os.getenv("BINANCE_API_KEY", "")
+BINANCE_API_SECRET: str  = os.getenv("BINANCE_API_SECRET", "")
+# Defaults to the Binance testnet so an unconfigured .env can never touch real funds.
+BINANCE_TESTNET:    bool = os.getenv("BINANCE_TESTNET", "true").lower() == "true"
+
+CRYPTO_SYMBOLS: Dict[str, str] = {
+    "BTC": "BTC/USDT",
+    "ETH": "ETH/USDT",
+    "BNB": "BNB/USDT",
+    "SOL": "SOL/USDT",
+}
+CRYPTO_TREND_SYMBOLS: List[str] = list(CRYPTO_SYMBOLS.keys())
+
+# Binance rejects orders below this notional value (USDT)
+CRYPTO_MIN_NOTIONAL_USDT: float = 10.0
+
+CRYPTO_SCAN_INTERVAL_SECONDS: int = SCAN_INTERVAL_SECONDS   # same M15 cadence
+
+CRYPTO_TRADE_LOG_FILE:  str = os.path.join(LOG_DIR, "crypto_trades.csv")
+CRYPTO_PERF_LOG_FILE:   str = os.path.join(LOG_DIR, "crypto_performance.csv")
+CRYPTO_APP_LOG_FILE:    str = os.path.join(LOG_DIR, "crypto_bot.log")
+CRYPTO_POSITIONS_FILE:  str = os.path.join(LOG_DIR, "crypto_positions.json")

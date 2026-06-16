@@ -1,15 +1,14 @@
 """
 Multi-symbol market scanner.
-Fetches candles for all 5 instruments every cycle and produces scored signals.
+Fetches candles for all configured instruments every cycle and produces scored signals.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
-from bot.broker_deriv import DerivBroker
 from bot.config import (
     SYMBOLS, TREND_SYMBOLS, REVERSAL_SYMBOLS,
     TIMEFRAME_M15, TIMEFRAME_M30, CANDLE_COUNT,
@@ -22,12 +21,21 @@ log = logging.getLogger(__name__)
 
 class MarketScanner:
     """
-    Scans all 5 instruments simultaneously.
+    Scans all configured instruments simultaneously.
     Runs the appropriate strategy per symbol and returns qualified signals.
+
+    Defaults to the Deriv SYMBOLS/TREND_SYMBOLS/REVERSAL_SYMBOLS, but accepts
+    overrides so the same scanner works for other brokers (e.g. crypto).
     """
 
-    def __init__(self, broker: DerivBroker) -> None:
+    def __init__(self, broker: Any,
+                 symbols: Optional[Dict[str, str]] = None,
+                 trend_symbols: Optional[List[str]] = None,
+                 reversal_symbols: Optional[List[str]] = None) -> None:
         self._broker = broker
+        self._symbols          = symbols          if symbols          is not None else SYMBOLS
+        self._trend_symbols    = trend_symbols    if trend_symbols    is not None else TREND_SYMBOLS
+        self._reversal_symbols = reversal_symbols if reversal_symbols is not None else REVERSAL_SYMBOLS
         self._trend_strat    = TrendStrategy()
         self._reversal_strat = ReversalStrategy()
 
@@ -36,9 +44,9 @@ class MarketScanner:
     # ------------------------------------------------------------------
 
     async def _fetch_candles(self, symbol: str, granularity: int) -> Optional[CandleData]:
-        deriv_symbol = SYMBOLS[symbol]
+        broker_symbol = self._symbols[symbol]
         try:
-            data = await self._broker.get_candles(deriv_symbol, granularity, CANDLE_COUNT)
+            data = await self._broker.get_candles(broker_symbol, granularity, CANDLE_COUNT)
             log.debug("Fetched %d candles for %s @ %ds", len(data), symbol, granularity)
             return data
         except Exception as exc:
@@ -58,9 +66,9 @@ class MarketScanner:
         if m15_data is None or m30_data is None:
             return None
 
-        if symbol in TREND_SYMBOLS:
+        if symbol in self._trend_symbols:
             signal = self._trend_strat.analyze(symbol, m15_data, m30_data)
-        elif symbol in REVERSAL_SYMBOLS:
+        elif symbol in self._reversal_symbols:
             signal = self._reversal_strat.analyze(symbol, m15_data, m30_data)
         else:
             log.warning("Unknown symbol category: %s", symbol)
@@ -87,12 +95,12 @@ class MarketScanner:
         log.info("=== Market scan started ===")
         tasks = [
             asyncio.create_task(self._analyze_symbol(sym))
-            for sym in SYMBOLS.keys()
+            for sym in self._symbols.keys()
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         signals: List[Signal] = []
-        for sym, result in zip(SYMBOLS.keys(), results):
+        for sym, result in zip(self._symbols.keys(), results):
             if isinstance(result, Exception):
                 log.error("Scan error for %s: %s", sym, result)
             elif result is not None:

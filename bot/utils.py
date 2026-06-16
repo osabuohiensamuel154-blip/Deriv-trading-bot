@@ -110,9 +110,10 @@ BANNER = r"""
 """
 
 
-def print_banner() -> None:
+def print_banner(instruments: str = "V50 | V75 | V100 | BOOM1000 | CRASH1000",
+                  strategies: str = "Trend (EMA+RSI) | Reversal (Spike+RSI)") -> None:
     print(BANNER)
     print(f"  Started at: {utc_now().strftime('%Y-%m-%d %H:%M:%S UTC')}")
-    print("  Instruments: V50 | V75 | V100 | BOOM1000 | CRASH1000")
-    print("  Strategies:  Trend (EMA+RSI) | Reversal (Spike+RSI)")
+    print(f"  Instruments: {instruments}")
+    print(f"  Strategies:  {strategies}")
     print("-" * 70)

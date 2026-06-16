@@ -82,7 +82,9 @@ class TradeLogger:
     Generates daily performance summaries.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, trade_log_file: str = TRADE_LOG_FILE, perf_log_file: str = PERF_LOG_FILE) -> None:
+        self._trade_log_file: str = trade_log_file
+        self._perf_log_file:  str = perf_log_file
         self._win_streak:  int = 0
         self._loss_streak: int = 0
         self._daily_records: List[TradeRecord] = []
@@ -136,7 +138,7 @@ class TradeLogger:
             note        = note,
         )
 
-        _write_row(TRADE_LOG_FILE, _TRADE_FIELDS, asdict(record))
+        _write_row(self._trade_log_file, _TRADE_FIELDS, asdict(record))
         self._daily_records.append(record)
 
         log.info(
@@ -172,7 +174,7 @@ class TradeLogger:
             equity_end   = round(equity_end, 2),
         )
 
-        _write_row(PERF_LOG_FILE, _PERF_FIELDS, asdict(perf))
+        _write_row(self._perf_log_file, _PERF_FIELDS, asdict(perf))
         self._daily_records.clear()
 
         log.info(
@@ -198,7 +200,7 @@ class TradeLogger:
 # Application-level logging setup
 # ---------------------------------------------------------------------------
 
-def setup_logging(level: int = logging.INFO) -> None:
+def setup_logging(level: int = logging.INFO, log_file: str = APP_LOG_FILE) -> None:
     """Configure root logger → console + rotating file."""
     import logging.handlers
 
@@ -220,7 +222,7 @@ def setup_logging(level: int = logging.INFO) -> None:
 
     # Rotating file handler (10 MB × 5 backups)
     fh = logging.handlers.RotatingFileHandler(
-        APP_LOG_FILE, maxBytes=10 * 1024 * 1024, backupCount=5
+        log_file, maxBytes=10 * 1024 * 1024, backupCount=5
     )
     fh.setLevel(level)
     fh.setFormatter(fmt)
