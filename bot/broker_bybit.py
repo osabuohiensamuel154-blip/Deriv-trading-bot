@@ -74,6 +74,10 @@ class BybitBroker:
         if BYBIT_TESTNET:
             self._exchange.set_sandbox_mode(True)
 
+        # Skip fetch_currencies() inside load_markets — it calls
+        # /v5/asset/coin/query-info which requires Asset permission.
+        # We only need Contract (trade) permission to place orders.
+        self._exchange.has["fetchCurrencies"] = False
         await self._exchange.load_markets()
         log.info("Connected to Bybit Linear Perpetuals%s",
                   " (TESTNET)" if BYBIT_TESTNET else " (LIVE)")
