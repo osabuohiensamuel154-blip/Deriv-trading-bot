@@ -14,6 +14,11 @@ import os
 import signal
 import sys
 
+# Windows: switch to SelectorEventLoop so aiodns (used by aiohttp/ccxt) can
+# resolve hostnames — ProactorEventLoop (the Windows default) breaks async DNS.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 try:
     from dotenv import load_dotenv
     load_dotenv()
