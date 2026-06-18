@@ -82,7 +82,11 @@ class BybitBroker:
 
             async def _demo_fetch(url: str, method: str = "GET",
                                    headers: Any = None, body: Any = None) -> Any:
-                url = url.replace("://api.bybit.com/", "://api-demo.bybit.com/")
+                # Only redirect authenticated (private) calls to the Demo endpoint.
+                # Public market-data calls (instruments-info, etc.) stay on api.bybit.com
+                # because api-demo.bybit.com does not serve those endpoints.
+                if headers and "X-BAPI-API-KEY" in headers:
+                    url = url.replace("://api.bybit.com/", "://api-demo.bybit.com/")
                 return await _orig_fetch(url, method, headers, body)
 
             self._exchange.fetch = _demo_fetch
