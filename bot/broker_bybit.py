@@ -74,13 +74,20 @@ class BybitBroker:
         if BYBIT_TESTNET:
             self._exchange.set_sandbox_mode(True)
         elif BYBIT_DEMO:
-            # Demo Trading account uses api-demo.bybit.com, not api.bybit.com
-            for section in ("public", "private"):
-                urls = self._exchange.urls.get("api", {})
-                if isinstance(urls, dict) and section in urls:
-                    urls[section] = urls[section].replace(
-                        "api.bybit.com", "api-demo.bybit.com"
-                    )
+            # Demo Trading account uses api-demo.bybit.com, not api.bybit.com.
+            # Replace in ALL URL keys (ccxt bybit may use publicLinear,
+            # privateLinear, etc. in addition to the standard public/private).
+            api_urls = self._exchange.urls.get("api", {})
+            if isinstance(api_urls, dict):
+                for key in list(api_urls.keys()):
+                    if isinstance(api_urls[key], str):
+                        api_urls[key] = api_urls[key].replace(
+                            "api.bybit.com", "api-demo.bybit.com"
+                        )
+            elif isinstance(api_urls, str):
+                self._exchange.urls["api"] = api_urls.replace(
+                    "api.bybit.com", "api-demo.bybit.com"
+                )
 
         # Skip fetch_currencies() inside load_markets — it calls
         # /v5/asset/coin/query-info which requires Asset permission.
@@ -132,9 +139,16 @@ class BybitBroker:
                     for account in (resp.get("result", {}).get("list") or []):
                         for coin in (account.get("coin") or []):
                             if coin.get("coin") == asset:
-                                return float(coin.get("walletBalance") or 0)
-                except Exception:
+                                # walletBalance is the settled balance;
+                                # fall back to equity if walletBalance is zero
+                                bal = float(coin.get("walletBalance") or 0)
+                                if bal == 0:
+                                    bal = float(coin.get("equity") or 0)
+                                return bal
+                except Exception as exc:
+                    log.warning("Balance fetch failed (accountType=%s): %s", acct_type, exc)
                     continue
+            log.warning("Could not read %s balance from UNIFIED or CONTRACT wallet", asset)
             return 0.0
         except Exception as exc:
             raise BybitAPIError(str(exc)) from exc
