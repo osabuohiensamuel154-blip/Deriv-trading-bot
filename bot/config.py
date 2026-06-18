@@ -181,6 +181,8 @@ BYBIT_API_KEY:    str  = os.getenv("BYBIT_API_KEY", "")
 BYBIT_API_SECRET: str  = os.getenv("BYBIT_API_SECRET", "")
 # Defaults to testnet so an unconfigured .env can never touch real funds.
 BYBIT_TESTNET:    bool = os.getenv("BYBIT_TESTNET", "true").lower() == "true"
+# Set BYBIT_DEMO=true when using Bybit's Demo Trading account (api-demo.bybit.com).
+BYBIT_DEMO:       bool = os.getenv("BYBIT_DEMO", "false").lower() == "true"
 
 # Bybit USDT Linear Perpetual symbol format (ccxt unified: "BASE/USDT:USDT")
 CRYPTO_SYMBOLS: Dict[str, str] = {

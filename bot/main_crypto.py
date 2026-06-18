@@ -285,7 +285,7 @@ async def run_bot() -> None:
         while not _SHUTDOWN:
             _cycle += 1
             cycle_start = utc_now()
-            log.info("─── Cycle #%d | %s ───", _cycle, cycle_start.strftime("%H:%M:%S UTC"))
+            log.info("--- Cycle #%d | %s ---", _cycle, cycle_start.strftime("%H:%M:%S UTC"))
 
             try:
                 equity = await broker.get_balance("USDT")

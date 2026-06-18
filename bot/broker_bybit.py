@@ -16,7 +16,7 @@ import ccxt.async_support as ccxt
 import numpy as np
 
 from bot.config import (
-    BYBIT_API_KEY, BYBIT_API_SECRET, BYBIT_TESTNET,
+    BYBIT_API_KEY, BYBIT_API_SECRET, BYBIT_TESTNET, BYBIT_DEMO,
     BYBIT_MARGIN_MODE, BYBIT_LEVERAGE,
 )
 from bot.strategies import CandleData
@@ -73,14 +73,22 @@ class BybitBroker:
         })
         if BYBIT_TESTNET:
             self._exchange.set_sandbox_mode(True)
+        elif BYBIT_DEMO:
+            # Demo Trading account uses api-demo.bybit.com, not api.bybit.com
+            for section in ("public", "private"):
+                urls = self._exchange.urls.get("api", {})
+                if isinstance(urls, dict) and section in urls:
+                    urls[section] = urls[section].replace(
+                        "api.bybit.com", "api-demo.bybit.com"
+                    )
 
         # Skip fetch_currencies() inside load_markets — it calls
         # /v5/asset/coin/query-info which requires Asset permission.
         # We only need Contract (trade) permission to place orders.
         self._exchange.has["fetchCurrencies"] = False
         await self._exchange.load_markets()
-        log.info("Connected to Bybit Linear Perpetuals%s",
-                  " (TESTNET)" if BYBIT_TESTNET else " (LIVE)")
+        mode = " (TESTNET)" if BYBIT_TESTNET else " (DEMO)" if BYBIT_DEMO else " (LIVE)"
+        log.info("Connected to Bybit Linear Perpetuals%s", mode)
 
     async def disconnect(self) -> None:
         if self._exchange:
