@@ -74,20 +74,18 @@ class BybitBroker:
         if BYBIT_TESTNET:
             self._exchange.set_sandbox_mode(True)
         elif BYBIT_DEMO:
-            # Demo Trading account uses api-demo.bybit.com, not api.bybit.com.
-            # Replace in ALL URL keys (ccxt bybit may use publicLinear,
-            # privateLinear, etc. in addition to the standard public/private).
-            api_urls = self._exchange.urls.get("api", {})
-            if isinstance(api_urls, dict):
-                for key in list(api_urls.keys()):
-                    if isinstance(api_urls[key], str):
-                        api_urls[key] = api_urls[key].replace(
-                            "api.bybit.com", "api-demo.bybit.com"
-                        )
-            elif isinstance(api_urls, str):
-                self._exchange.urls["api"] = api_urls.replace(
-                    "api.bybit.com", "api-demo.bybit.com"
-                )
+            # ccxt bybit builds request URLs internally in ways that bypass
+            # modifications to self.urls['api']. The only reliable interception
+            # point is wrapping the fetch() coroutine itself before the HTTP
+            # call goes out, swapping the hostname at the last moment.
+            _orig_fetch = self._exchange.fetch
+
+            async def _demo_fetch(url: str, method: str = "GET",
+                                   headers: Any = None, body: Any = None) -> Any:
+                url = url.replace("://api.bybit.com/", "://api-demo.bybit.com/")
+                return await _orig_fetch(url, method, headers, body)
+
+            self._exchange.fetch = _demo_fetch
 
         # Skip fetch_currencies() inside load_markets — it calls
         # /v5/asset/coin/query-info which requires Asset permission.
