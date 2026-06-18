@@ -112,11 +112,24 @@ class BybitBroker:
     # ------------------------------------------------------------------
 
     async def get_balance(self, asset: str = "USDT") -> float:
+        # Call Bybit V5 wallet endpoint directly to avoid ccxt's
+        # is_unified_enabled() check, which requires extra permissions.
+        # Try UNIFIED first (new UTA accounts), fall back to CONTRACT.
         try:
-            bal = await self._exchange.fetch_balance()
+            for acct_type in ("UNIFIED", "CONTRACT"):
+                try:
+                    resp = await self._exchange.privateGetV5AccountWalletBalance(
+                        {"accountType": acct_type}
+                    )
+                    for account in (resp.get("result", {}).get("list") or []):
+                        for coin in (account.get("coin") or []):
+                            if coin.get("coin") == asset:
+                                return float(coin.get("walletBalance") or 0)
+                except Exception:
+                    continue
+            return 0.0
         except Exception as exc:
             raise BybitAPIError(str(exc)) from exc
-        return float(bal.get("free", {}).get(asset, 0.0))
 
     async def get_open_positions(self) -> List[Dict]:
         """Returns non-zero positions currently open on the exchange."""
