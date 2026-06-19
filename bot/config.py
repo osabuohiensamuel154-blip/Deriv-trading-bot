@@ -23,8 +23,10 @@ SYMBOLS: Dict[str, str] = {
     "V10":       "R_10",
     "V15":       "R_15",
     "V25":       "R_25",
+    "V30":       "R_30",
     "V50":       "R_50",
     "V75":       "R_75",
+    "V90":       "R_90",
     "V100":      "R_100",
     # --- 1-Second Volatility (1 tick every 1 second) ---
     "V5_1S":     "1HZ5V",
@@ -43,7 +45,7 @@ SYMBOLS: Dict[str, str] = {
 
 TREND_SYMBOLS: List[str] = [
     # Standard 2s
-    "V5", "V10", "V15", "V25", "V50", "V75", "V100",
+    "V5", "V10", "V15", "V25", "V30", "V50", "V75", "V90", "V100",
     # 1-second
     "V5_1S", "V10_1S", "V15_1S", "V25_1S", "V30_1S",
     "V50_1S", "V75_1S", "V90_1S", "V100_1S",
@@ -123,31 +125,30 @@ PAUSE_DURATION_SECONDS:    int   = 7200    # 2 hours
 TP_SL_RATIO: float = 2.0
 
 # Multipliers per symbol — Deriv enforces different allowed values per instrument
-# Confirmed accepted ranges (lowest value used to maximise trade approval odds):
-# R_25:    160, 400, 800, 1200, 1600      → 160
-# R_50:    80,  200, 400, 600,  800       → 80
-# R_75:    50,  100, 200, 500,  1000      → 50
-# R_100:   40,  100, 200, 300,  400       → 40
-# 1HZ10V:  400, 1000, 2000, 3000, 4000   → 400
-# 1HZ25V:  160, 400, 800, 1200, 1600     → 160
-# 1HZ50V:  80,  200, 400, 600,  800      → 80
+# If a trade fails with "Multiplier not in acceptable range", update the value here.
+# R_50  confirmed: 80, 200, 400, 600, 800
+# R_75  confirmed: 50, 100, 200, 500, 1000
+# R_100 confirmed: 50, 100, 200, 500, 1000
 MULTIPLIER_VALUE: int = 50   # default fallback
 MULTIPLIER_PER_SYMBOL: Dict[str, int] = {
     # Standard 2s — confirmed
+    "V50":       80,
+    "V75":       50,
+    "V100":      50,
+    # Standard 2s — unconfirmed, adjust if trade fails
     "V5":        100,
     "V10":       100,
     "V15":       100,
-    "V25":       160,
-    "V50":       80,
-    "V75":       50,
-    "V100":      40,
-    # 1-second variants — confirmed
+    "V25":       100,
+    "V30":       50,
+    "V90":       50,
+    # 1-second variants — confirmed range: 40,100,200,300,400 → use 100
     "V5_1S":     100,
-    "V10_1S":    400,
+    "V10_1S":    100,
     "V15_1S":    100,
-    "V25_1S":    160,
+    "V25_1S":    100,
     "V30_1S":    100,
-    "V50_1S":    80,
+    "V50_1S":    100,
     "V75_1S":    100,
     "V90_1S":    100,
     "V100_1S":   100,
