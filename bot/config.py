@@ -19,12 +19,15 @@ DERIV_WS_URL: str = "wss://ws.binaryws.com/websockets/v3"
 # ---------------------------------------------------------------------------
 SYMBOLS: Dict[str, str] = {
     # --- Standard Volatility (1 tick every 2 seconds) ---
+    "V5":        "R_5",
     "V10":       "R_10",
+    "V15":       "R_15",
     "V25":       "R_25",
     "V50":       "R_50",
     "V75":       "R_75",
     "V100":      "R_100",
     # --- 1-Second Volatility (1 tick every 1 second) ---
+    "V5_1S":     "1HZ5V",
     "V10_1S":    "1HZ10V",
     "V15_1S":    "1HZ15V",
     "V25_1S":    "1HZ25V",
@@ -40,9 +43,9 @@ SYMBOLS: Dict[str, str] = {
 
 TREND_SYMBOLS: List[str] = [
     # Standard 2s
-    "V10", "V25", "V50", "V75", "V100",
+    "V5", "V10", "V15", "V25", "V50", "V75", "V100",
     # 1-second
-    "V10_1S", "V15_1S", "V25_1S", "V30_1S",
+    "V5_1S", "V10_1S", "V15_1S", "V25_1S", "V30_1S",
     "V50_1S", "V75_1S", "V90_1S", "V100_1S",
 ]
 REVERSAL_SYMBOLS: List[str] = ["BOOM1000", "CRASH1000"]
@@ -130,13 +133,16 @@ TP_SL_RATIO: float = 2.0
 # 1HZ50V:  80,  200, 400, 600,  800      → 80
 MULTIPLIER_VALUE: int = 50   # default fallback
 MULTIPLIER_PER_SYMBOL: Dict[str, int] = {
-    # Standard 2s
+    # Standard 2s — confirmed
+    "V5":        100,
     "V10":       100,
+    "V15":       100,
     "V25":       160,
     "V50":       80,
     "V75":       50,
     "V100":      40,
-    # 1-second variants
+    # 1-second variants — confirmed
+    "V5_1S":     100,
     "V10_1S":    400,
     "V15_1S":    100,
     "V25_1S":    160,
