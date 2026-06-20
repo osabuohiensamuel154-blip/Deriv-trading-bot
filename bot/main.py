@@ -208,7 +208,8 @@ async def position_monitor(broker: DerivBroker, risk_mgr: RiskManager) -> None:
 async def run_bot() -> None:
     global _SHUTDOWN
 
-    print_banner()
+    from bot.config import TREND_SYMBOLS, REVERSAL_SYMBOLS
+    print_banner(instruments=" | ".join(TREND_SYMBOLS + REVERSAL_SYMBOLS))
     log.info("Bot starting up …")
 
     risk_mgr     = RiskManager()
